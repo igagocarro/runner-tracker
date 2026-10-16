@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Runner Tracker</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#c45c26">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Runner Tracker">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&display=swap">
+
+<!-- Leaflet CSS (injected via JS to keep CSP happy) -->
+
+<!-- App styles -->
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 24 24"><path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7z"/></svg>
+  </div>
+  <div>
+    <h1>Runner Tracker</h1>
+    <p>Sigue a tu equipo en tiempo real</p>
+  </div>
+</header>
+
+<!-- ── SETUP VIEW ── -->
+<div id="setup-view">
+
+  <!-- GPX -->
+  <div class="card">
+    <div class="card-title">Recorrido GPX</div>
+    <div id="drop-zone">
+      <input type="file" accept=".gpx" id="gpx-input">
+      <span class="drop-icon">🗺️</span>
+      <div class="drop-label">Arrastra el archivo GPX o <strong>haz clic para seleccionar</strong></div>
+      <div class="drop-hint">Archivo .gpx del recorrido de la carrera</div>
+    </div>
+    <div id="gpx-name">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+      <span id="gpx-name-text"></span>
+    </div>
+    <div id="route-preview" style="margin-top:14px;">
+      <div class="route-canvas-wrap" id="route-canvas-wrap">
+        <div id="route-map"></div>
+        <div class="map-hint">Toca el recorrido para añadir un punto de animación</div>
+        <div class="map-zoom-btns">
+          <button onclick="setupMap&&setupMap.zoomIn()" title="Acercar">+</button>
+          <button onclick="setupMap&&setupMap.zoomOut()" title="Alejar">−</button>
+          <button onclick="fitSetupMap()" title="Ajustar" style="font-size:12px;">⊡</button>
+        </div>
+        <div id="wp-pending-popup">
+          <div class="popup-label" id="popup-km-label">km — del recorrido</div>
+          <input type="text" id="popup-wp-name" placeholder="Nombre del punto">
+          <div class="popup-row">
+            <button class="popup-ok" onclick="confirmMapWaypoint()">Añadir</button>
+            <button class="popup-cancel" onclick="cancelMapWaypoint()">Cancelar</button>
+          </div>
+        </div>
+      </div>
+      <div class="text-xs" style="margin-top:6px;" id="route-stats"></div>
+    </div>
+  </div>
+
+  <!-- Corredores -->
+  <div class="card">
+    <div class="card-title">Corredores</div>
+    <div id="runners-setup-list"></div>
+    <button class="add-runner-btn" onclick="addRunner()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+      Añadir corredor
+    </button>
+  </div>
+
+  <!-- Puntos de animación -->
+  <div class="card">
+    <div class="card-title">Puntos de animación (opcional)</div>
+    <div class="wp-editor-row">
+      <div class="field field-name"><label>Nombre del punto</label><input type="text" id="wp-name" placeholder="Km 10 – Plaza Mayor"></div>
+      <div class="field field-km"><label>Dist. km</label><input type="number" id="wp-km" placeholder="10.0" step="0.1" min="0"></div>
+      <button class="btn btn-ghost" onclick="addWaypoint()" style="align-self:flex-end;">+ Añadir</button>
+    </div>
+    <div class="wp-list" id="wp-list"></div>
+    <div class="text-xs" style="margin-top:6px;">Al cargar el GPX se generan marcas cada 5 km. Elimina o añade las que necesites.</div>
+  </div>
+
+  <div class="btn-row" style="padding-bottom:28px;">
+    <button class="btn btn-primary" id="start-btn" onclick="startTracking()" disabled>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      Iniciar seguimiento
+    </button>
+  </div>
+
+</div><!-- /setup-view -->
+
+<!-- ── TRACKER VIEW ── -->
+<div id="tracker-view" class="hidden">
+
+  <!-- Runner tabs -->
+  <div class="runner-tabs" id="runner-tabs"></div>
+
+  <!-- Map -->
+  <div class="card" style="padding:14px;">
+    <div id="live-map-wrap">
+      <div id="live-map"></div>
+      <div class="live-map-zoom-btns">
+        <button onclick="liveMap&&liveMap.zoomIn()" title="Acercar">+</button>
+        <button onclick="liveMap&&liveMap.zoomOut()" title="Alejar">−</button>
+        <button onclick="fitLiveMap()" title="Ajustar" style="font-size:12px;">⊡</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Per-runner panel -->
+  <div id="runner-panel"></div>
+
+  <!-- Waypoints table -->
+  <div class="card">
+    <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+      <span>Puntos de animación</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px;" onclick="openAddLiveWp()">+ PA</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="wp-table" id="wp-table">
+        <thead id="wp-thead"></thead>
+        <tbody id="wp-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="btn-row" style="padding-bottom:28px;">
+    <button class="btn btn-ghost" onclick="goBack()">← Editar configuración</button>
+  </div>
+
+</div><!-- /tracker-view -->
+
+</div><!-- /app -->
+
+<!-- Add live waypoint popup -->
+<div class="mark-popup" id="add-live-wp-popup" style="display:none;" onclick="if(event.target===this)closeAddLiveWp()">
+  <div class="mark-popup-box">
+    <h3>Añadir punto de animación</h3>
+    <div class="field">
+      <label>Nombre</label>
+      <input type="text" id="live-wp-name" placeholder="Ej: km 23 – Pueblo">
+    </div>
+    <div class="field">
+      <label>Distancia (km)</label>
+      <input type="number" id="live-wp-km" step="0.1" min="0" placeholder="23.0">
+    </div>
+    <div class="mark-popup-actions">
+      <button class="mark-ok" onclick="confirmAddLiveWp()">Añadir</button>
+      <button class="mark-cancel" onclick="closeAddLiveWp()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Mark-pass popup -->
+<div class="mark-popup" id="mark-popup" style="display:none;" onclick="if(event.target===this)cancelMarkPass()">
+  <div class="mark-popup-box">
+    <h3 id="mark-popup-title">Marcar paso</h3>
+    <div class="sub" id="mark-popup-sub"></div>
+    <div class="field">
+      <label>Hora de paso real (HH:MM:SS)</label>
+      <input type="time" step="1" id="mark-time-input">
+    </div>
+    <div class="mark-popup-actions">
+      <button class="mark-now" onclick="markPassNow()">🕐 Ahora</button>
+      <button class="mark-ok" onclick="confirmMarkPass()">Confirmar</button>
+      <button class="mark-cancel" onclick="cancelMarkPass()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Inject Leaflet CSS dynamically -->
+<script>
+(function(){
+  const lnk=document.createElement('link');
+  lnk.rel='stylesheet';
+  lnk.href='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css';
+  document.head.appendChild(lnk);
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
